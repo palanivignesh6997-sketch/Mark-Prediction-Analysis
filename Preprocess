@@ -1,0 +1,81 @@
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import MultiLabelBinarizer
+
+def load_and_preprocess():
+
+    purplle = pd.read_csv("purplle_campaign_data_with_nulls.csv")
+    nykaa = pd.read_csv("nykaa_campaign_data_with_nulls.csv")
+    tira = pd.read_csv("tira_campaign_data_with_nulls.csv")
+
+    
+    for df in [purplle, nykaa, tira]:
+        df.columns = df.columns.str.strip()
+        df.drop(columns=['Campaign_ID'], inplace=True, errors='ignore')
+
+    
+    purplle['Company'] = 'purplle'
+    nykaa['Company'] = 'nykaa'
+    tira['Company'] = 'tira'
+
+    df = pd.concat([tira, purplle, nykaa], ignore_index=True)
+
+    
+    df['Revenue'] = df['Revenue'].fillna(0)
+    df['Acquisition_Cost'] = df['Acquisition_Cost'].fillna(df['Acquisition_Cost'].mean())
+
+    df['ROI'] = (df['Revenue'] - df['Acquisition_Cost']) / df['Acquisition_Cost']
+
+    df['Date'] = pd.to_datetime(df['Date'], format='%d-%m-%Y', errors='coerce')
+
+    df['Month'] = df['Date'].dt.month
+    df['DayOfWeek'] = df['Date'].dt.dayofweek
+    df['Is_Weekend'] = (df['DayOfWeek'] >= 5).astype(int)
+
+    df.drop('Date', axis=1, inplace=True)
+
+   
+    num_cols = df.select_dtypes(include=['int64','float64']).columns
+    num_cols = [c for c in num_cols if c not in ['Revenue','Acquisition_Cost','ROI']]
+
+    for col in num_cols:
+        df[col] = df[col].fillna(df[col].median())
+
+    cat_cols = df.select_dtypes(include='object').columns
+    for col in cat_cols:
+        df[col] = df[col].fillna(df[col].mode()[0])
+
+    
+    for col in ['Revenue','Impressions','Clicks']:
+        df[col] = np.log1p(df[col])
+
+   
+    for col in ['Duration','Impressions','Clicks','Leads','Conversions','Revenue','Acquisition_Cost','Engagement_Score']:
+        Q1 = df[col].quantile(0.25)
+        Q3 = df[col].quantile(0.75)
+        IQR = Q3 - Q1
+        df[col] = df[col].clip(Q1 - 1.5*IQR, Q3 + 1.5*IQR)
+
+    
+    df['Profit_Flag'] = (df['ROI'] > 0).astype(int)
+
+    
+    df['Channel_Used'] = df['Channel_Used'].apply(lambda x: str(x).split(','))
+    mlb = MultiLabelBinarizer()
+
+    channel_encoded = pd.DataFrame(
+        mlb.fit_transform(df['Channel_Used']),
+        columns=mlb.classes_
+    )
+
+    df = pd.concat([df.drop('Channel_Used', axis=1), channel_encoded], axis=1)
+
+    
+    df = pd.get_dummies(df, columns=[
+        'Company','Campaign_Type','Customer_Segment','Language','Target_Audience'
+    ], drop_first=True)
+
+    df.columns = df.columns.str.strip()
+    df = df.loc[:, ~df.columns.duplicated()]
+
+    return df, mlb
