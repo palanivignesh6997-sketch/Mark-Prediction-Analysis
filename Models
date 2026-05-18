@@ -1,0 +1,59 @@
+import os
+import joblib
+import numpy as np
+
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression, LinearRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.metrics import classification_report, confusion_matrix
+
+from imblearn.over_sampling import SMOTE
+
+from preprocess import load_and_preprocess
+
+os.makedirs("Models", exist_ok=True)
+
+df, mlb = load_and_preprocess()
+
+
+X_cls = df.drop(columns=['Profit_Flag','ROI'], errors='ignore')
+y_cls = df['Profit_Flag']
+
+X_reg = df.drop(columns=['Revenue','Profit_Flag','ROI'], errors='ignore')
+y_reg = df['Revenue']
+
+
+X_train_cls, X_test_cls, y_train_cls, y_test_cls = train_test_split(
+    X_cls, y_cls, test_size=0.2, random_state=42
+)
+
+X_train_reg, X_test_reg, y_train_reg, y_test_reg = train_test_split(
+    X_reg, y_reg, test_size=0.2, random_state=42
+)
+
+
+smote = SMOTE(random_state=42)
+X_train_cls_bal, y_train_cls_bal = smote.fit_resample(X_train_cls, y_train_cls)
+
+
+clf = RandomForestClassifier(n_estimators=100, random_state=42)
+clf.fit(X_train_cls_bal, y_train_cls_bal)
+
+reg = RandomForestRegressor(n_estimators=100, random_state=42)
+reg.fit(X_train_reg, y_train_reg)
+
+print("=== CLASSIFICATION ===")
+print(confusion_matrix(y_train_cls_bal, clf.predict(X_train_cls_bal)))
+print(confusion_matrix(y_test_cls, clf.predict(X_test_cls)))
+print(classification_report(y_test_cls, clf.predict(X_test_cls)))
+
+
+joblib.dump(clf, "Models/clf_model.pkl")
+joblib.dump(reg, "Models/reg_model.pkl")
+joblib.dump(mlb, "Models/mlb.pkl")
+joblib.dump(X_cls.columns.tolist(), "Models/cls_columns.pkl")
+joblib.dump(X_reg.columns.tolist(), "Models/reg_columns.pkl")
+joblib.dump(X_train_cls.columns.tolist(), "Models/train_columns.pkl")
+
+print("Models saved successfully")
