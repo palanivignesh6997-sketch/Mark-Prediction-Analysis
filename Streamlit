@@ -1,0 +1,80 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+import joblib
+
+st.title("Campaign Prediction App")
+
+reg = joblib.load("Models/reg_model.pkl")
+mlb = joblib.load("Models/mlb.pkl")
+reg_cols = joblib.load("Models/reg_columns.pkl")
+
+duration = st.number_input("Duration", 1)
+impressions = st.number_input("Impressions", 1)
+clicks = st.number_input("Clicks", 1)
+leads = st.number_input("Leads", 1)
+conversions = st.number_input("Conversions", 1)
+acquisition_cost = st.number_input("Acquisition Cost", 1.0)
+engagement = st.number_input("Engagement Score", 1.0)
+
+month = st.number_input("Month", 1, 12)
+day = st.number_input("DayOfWeek", 0, 6)
+weekend = st.selectbox("Weekend", [0, 1])
+
+company = st.selectbox("Company", ["purplle", "nykaa", "tira"])
+campaign = st.selectbox("Campaign Type", ["Influencer", "Paid Ads", "SEO", "Social Media"])
+segment = st.selectbox("Customer Segment", ["Youth", "Working Women", "Premium Shoppers"])
+language = st.selectbox("Language", ["English", "Hindi", "Tamil"])
+audience = st.selectbox("Target Audience", ["Youth", "Working Women"])
+channels = st.multiselect(
+    "Channels Used",
+    ["Email", "Facebook", "Google", "Instagram", "WhatsApp", "YouTube"],
+    default=["Email", "Facebook"]
+)
+
+if st.button("Predict"):
+
+    data = {
+        "Duration": duration,
+        "Impressions": np.log1p(impressions),
+        "Clicks": np.log1p(clicks),
+        "Leads": leads,
+        "Conversions": conversions,
+        "Acquisition_Cost": acquisition_cost,
+        "Engagement_Score": engagement,
+        "Month": month,
+        "DayOfWeek": day,
+        "Is_Weekend": weekend,
+        "Company": company,
+        "Campaign_Type": campaign,
+        "Customer_Segment": segment,
+        "Language": language,
+        "Target_Audience": audience,
+        "Channel_Used": channels
+    }
+
+    df = pd.DataFrame([data])
+
+    ch_encoded = pd.DataFrame(mlb.transform([channels]), columns=mlb.classes_)
+    df = pd.concat([df.drop("Channel_Used", axis=1), ch_encoded], axis=1)
+
+    df = pd.get_dummies(df)
+
+    df_reg = df.reindex(columns=reg_cols, fill_value=0)
+
+    revenue_log = reg.predict(df_reg)[0]
+    revenue = np.expm1(revenue_log)
+
+    profit = revenue - acquisition_cost
+    roi = profit / acquisition_cost
+
+    st.subheader("Results")
+
+    st.write(f"Predicted Revenue: {revenue:,.2f}")
+    st.write(f"Profit: {profit:,.2f}")
+    st.write(f"ROI: {roi:.2f}")
+
+    if profit > 0:
+        st.success("Result: Profit")
+    else:
+        st.error("Result: Loss")
